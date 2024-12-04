@@ -37,24 +37,28 @@ jobs:
   sync-docs:
     runs-on: ubuntu-latest
 
+    env:
+      PRIMARY_REPO_PATH: readme-primary-repo
+      SYNC_REPO_PATH: readme-sync-repo
+
     steps:
     - name: Checkout primary repository
       uses: actions/checkout@v4
       with:
-        path: primary-repo
-        ref: ${{ github.ref }}  # Use the branch selected from the GitHub UI dropdown
+        path: ${{ env.PRIMARY_REPO_PATH }}
+        ref: ${{ github.ref }}
 
     - name: Checkout BiDi Sync repository
       uses: actions/checkout@v4
       with:
         repository: ${{ inputs.bidi_sync_repo }}
-        path: bidi-sync-repo
+        path: ${{ env.SYNC_REPO_PATH }}
         token: ${{ inputs.access_token }}
         ref: ${{ inputs.bidi_sync_branch }}
 
     - name: Check if branch exists
       run: |
-        cd bidi-sync-repo
+        cd ${{ env.SYNC_REPO_PATH }}
         if ! git ls-remote --heads origin ${{ inputs.bidi_sync_branch }} | grep -q ${{ inputs.bidi_sync_branch }}; then
           echo "Creating new branch: ${{ inputs.bidi_sync_branch }}"
           git checkout -b ${{ inputs.bidi_sync_branch }}
@@ -65,9 +69,9 @@ jobs:
     - name: Check for changes
       id: check_changes
       run: |
-        DEST_PATH="bidi-sync-repo/${{ inputs.bidi_sync_folder }}"
+        DEST_PATH="${{ env.SYNC_REPO_PATH }}/${{ inputs.bidi_sync_folder }}"
         mkdir -p "$DEST_PATH"
-        if [ -n "$(diff -r primary-repo/${{ inputs.primary_repo_folder }} $DEST_PATH)" ]; then
+        if [ -n "$(diff -r ${{ env.PRIMARY_REPO_PATH }}/${{ inputs.primary_repo_folder }} $DEST_PATH)" ]; then
           echo "changes_detected=true" >> $GITHUB_OUTPUT
         else
           echo "changes_detected=false" >> $GITHUB_OUTPUT
@@ -76,15 +80,15 @@ jobs:
     - name: Sync documentation
       if: steps.check_changes.outputs.changes_detected == 'true'
       run: |
-        DEST_PATH="bidi-sync-repo/${{ inputs.bidi_sync_folder }}"
+        DEST_PATH="${{ env.SYNC_REPO_PATH }}/${{ inputs.bidi_sync_folder }}"
         mkdir -p "$DEST_PATH"
         if [ -n "${{ inputs.bidi_sync_folder }}" ]; then
           find "$DEST_PATH" -mindepth 1 -delete
         else
-          find bidi-sync-repo -mindepth 1 ! -regex '^bidi-sync-repo/.git.*' -delete
+          find ${{ env.SYNC_REPO_PATH }} -mindepth 1 ! -regex '^${{ env.SYNC_REPO_PATH }}/.git.*' -delete
         fi
-        cp -r primary-repo/${{ inputs.primary_repo_folder }}/* "$DEST_PATH/"
-        cd bidi-sync-repo
+        cp -r ${{ env.PRIMARY_REPO_PATH }}/${{ inputs.primary_repo_folder }}/* "$DEST_PATH/"
+        cd ${{ env.SYNC_REPO_PATH }}
         git config user.name "${{ inputs.git_user_name }}"
         git config user.email "${{ inputs.git_user_email }}"
         git add -A
