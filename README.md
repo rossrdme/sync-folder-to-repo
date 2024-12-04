@@ -19,7 +19,7 @@ jobs:
       - name: Sync documentation to BiDi Sync Repo
         uses: rossrdme/sync-folder-to-repo@0.0.3
         with:
-          primary_repo_folder: "/toomuchlove"           # Required: Path in the primary repo to sync
+          primary_repo_folder: "/ReadMe"                # Required: Path in the primary repo to sync
           bidi_sync_repo: "yourusername/target-repo"    # Required: Target sync repository
           bidi_sync_folder: ""                          # Optional: Destination folder in target repo
           bidi_sync_branch: "main"                      # Required: Target branch in sync repo
