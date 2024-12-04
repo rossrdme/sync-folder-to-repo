@@ -1,58 +1,96 @@
-name: "Sync Folder to BiDi Repo"
-description: "Syncs a folder from a primary repo to a BiDi Sync repo."
-author: "Your Name or Organization"
-inputs:
-  primary_repo_folder:
-    description: "Folder in the primary repository to sync"
-    required: true
-  bidi_sync_repo:
-    description: "Name of the BiDi Sync repository"
-    required: true
-  bidi_sync_folder:
-    description: "Destination folder in the sync repository (optional)"
-    required: false
-    default: ""
-  bidi_sync_branch:
-    description: "Branch in the sync repository to push changes"
-    required: true
-    default: "main"
-outputs:
-  sync_status:
-    description: "Status of the sync process"
-runs:
-  using: "composite"
-  steps:
+name: Manual sync of folder contents to replace BiDi Sync repo
+
+on:
+  workflow_dispatch:
+    inputs:
+      primary_repo_folder:
+        description: "Folder in primary repository with docs to sync"
+        required: true
+        default: "/ReadMe"
+      bidi_sync_repo:
+        description: "Sync repository to push documentation"
+        required: true
+      bidi_sync_folder:
+        description: "Destination folder in sync repository (leave empty for root)"
+        required: false
+        default: ""
+      bidi_sync_branch:
+        description: "Target branch in sync repository"
+        required: true
+        default: "v1.0"
+      access_token:
+        description: "GitHub token with repository access"
+        required: true
+      git_user_name:
+        description: "Git user name for commits"
+        required: false
+        default: "ReadMe GitHub Actions Bot"
+      git_user_email:
+        description: "Git user email for commits"
+        required: false
+        default: "noreply@readme.com"
+
+permissions:
+  contents: read
+
+jobs:
+  sync-docs:
+    runs-on: ubuntu-latest
+
+    steps:
     - name: Checkout primary repository
       uses: actions/checkout@v4
       with:
         path: primary-repo
+        ref: ${{ github.ref }}  # Use the branch selected from the GitHub UI dropdown
 
     - name: Checkout BiDi Sync repository
       uses: actions/checkout@v4
       with:
         repository: ${{ inputs.bidi_sync_repo }}
-        token: ${{ secrets.GITHUB_TOKEN }}
         path: bidi-sync-repo
+        token: ${{ inputs.access_token }}
         ref: ${{ inputs.bidi_sync_branch }}
 
-    - name: Sync files
-      run: |
-        src="primary-repo/${{ inputs.primary_repo_folder }}"
-        dest="bidi-sync-repo/${{ inputs.bidi_sync_folder }}"
-        mkdir -p "$dest"
-        rsync -a --delete "$src/" "$dest/"
-      shell: bash
-
-    - name: Commit and push changes
+    - name: Check if branch exists
       run: |
         cd bidi-sync-repo
-        git config user.name "ReadMe GitHub Actions Bot"
-        git config user.email "noreply@readme.com"
-        git add .
-        git diff --cached --quiet || git commit -m "Sync folder to ${{ inputs.bidi_sync_branch }}"
-        git push origin ${{ inputs.bidi_sync_branch }}
-      shell: bash
+        if ! git ls-remote --heads origin ${{ inputs.bidi_sync_branch }} | grep -q ${{ inputs.bidi_sync_branch }}; then
+          echo "Creating new branch: ${{ inputs.bidi_sync_branch }}"
+          git checkout -b ${{ inputs.bidi_sync_branch }}
+          git push origin ${{ inputs.bidi_sync_branch }}
+        fi
+        git checkout ${{ inputs.bidi_sync_branch }}
 
-    - name: Set sync status output
-      id: sync_status
-      run: echo "sync_status=success" >> $GITHUB_OUTPUT
+    - name: Check for changes
+      id: check_changes
+      run: |
+        DEST_PATH="bidi-sync-repo/${{ inputs.bidi_sync_folder }}"
+        mkdir -p "$DEST_PATH"
+        if [ -n "$(diff -r primary-repo/${{ inputs.primary_repo_folder }} $DEST_PATH)" ]; then
+          echo "changes_detected=true" >> $GITHUB_OUTPUT
+        else
+          echo "changes_detected=false" >> $GITHUB_OUTPUT
+        fi
+
+    - name: Sync documentation
+      if: steps.check_changes.outputs.changes_detected == 'true'
+      run: |
+        DEST_PATH="bidi-sync-repo/${{ inputs.bidi_sync_folder }}"
+        mkdir -p "$DEST_PATH"
+        if [ -n "${{ inputs.bidi_sync_folder }}" ]; then
+          find "$DEST_PATH" -mindepth 1 -delete
+        else
+          find bidi-sync-repo -mindepth 1 ! -regex '^bidi-sync-repo/.git.*' -delete
+        fi
+        cp -r primary-repo/${{ inputs.primary_repo_folder }}/* "$DEST_PATH/"
+        cd bidi-sync-repo
+        git config user.name "${{ inputs.git_user_name }}"
+        git config user.email "${{ inputs.git_user_email }}"
+        git add -A
+        if git diff --cached --quiet; then
+          echo "No changes to commit."
+          exit 0
+        fi
+        git commit -m "Sync documentation from primary repo. Triggered by ${GITHUB_SHA} Branch: ${GITHUB_REF#refs/heads/} Workflow: ${GITHUB_WORKFLOW}"
+        git push origin ${{ inputs.bidi_sync_branch }}
