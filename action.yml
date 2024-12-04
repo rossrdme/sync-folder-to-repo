@@ -1,0 +1,58 @@
+name: "Sync Folder to BiDi Repo"
+description: "Syncs a folder from a primary repo to a BiDi Sync repo."
+author: "Your Name or Organization"
+inputs:
+  primary_repo_folder:
+    description: "Folder in the primary repository to sync"
+    required: true
+  bidi_sync_repo:
+    description: "Name of the BiDi Sync repository"
+    required: true
+  bidi_sync_folder:
+    description: "Destination folder in the sync repository (optional)"
+    required: false
+    default: ""
+  bidi_sync_branch:
+    description: "Branch in the sync repository to push changes"
+    required: true
+    default: "main"
+outputs:
+  sync_status:
+    description: "Status of the sync process"
+runs:
+  using: "composite"
+  steps:
+    - name: Checkout primary repository
+      uses: actions/checkout@v4
+      with:
+        path: primary-repo
+
+    - name: Checkout BiDi Sync repository
+      uses: actions/checkout@v4
+      with:
+        repository: ${{ inputs.bidi_sync_repo }}
+        token: ${{ secrets.GITHUB_TOKEN }}
+        path: bidi-sync-repo
+        ref: ${{ inputs.bidi_sync_branch }}
+
+    - name: Sync files
+      run: |
+        src="primary-repo/${{ inputs.primary_repo_folder }}"
+        dest="bidi-sync-repo/${{ inputs.bidi_sync_folder }}"
+        mkdir -p "$dest"
+        rsync -a --delete "$src/" "$dest/"
+      shell: bash
+
+    - name: Commit and push changes
+      run: |
+        cd bidi-sync-repo
+        git config user.name "ReadMe GitHub Actions Bot"
+        git config user.email "noreply@readme.com"
+        git add .
+        git diff --cached --quiet || git commit -m "Sync folder to ${{ inputs.bidi_sync_branch }}"
+        git push origin ${{ inputs.bidi_sync_branch }}
+      shell: bash
+
+    - name: Set sync status output
+      id: sync_status
+      run: echo "sync_status=success" >> $GITHUB_OUTPUT
